@@ -27,6 +27,7 @@ from odp.db import Base, Session, engine
 from odp.db.models import Catalog, Client, Collection, Role, Schema, Scope, Tag, Vocabulary, VocabularyTerm
 from odp.lib.hydra import HydraAdminAPI
 from odp.lib.schema import schema_md5
+from sadco.const import SADCOScope
 
 datadir = pathlib.Path(__file__).parent / 'systemdata'
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def initialize():
     with Session.begin():
         init_system_scopes()
         init_standard_scopes()
+        init_sadco_scopes()
         init_system_roles()
         init_schemas()
         init_vocabularies()
@@ -99,6 +101,21 @@ def init_standard_scopes():
     Session.execute(
         delete(Scope).
         where(Scope.type == ScopeType.oauth).
+        where(Scope.id.not_in(scope_ids))
+    )
+
+
+def init_sadco_scopes():
+    """Create or update the set of available SADCO API scopes."""
+    for scope_id in (scope_ids := [s.value for s in SADCOScope]):
+        if not Session.get(Scope, (scope_id, ScopeType.client)):
+            scope = Scope(id=scope_id, type=ScopeType.client)
+            scope.save()
+
+    Session.execute(
+        delete(Scope).
+        where(Scope.type == ScopeType.client).
+        where(Scope.id.like('sadco.%')).
         where(Scope.id.not_in(scope_ids))
     )
 
