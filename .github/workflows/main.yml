@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           cp .env.test .env
-          docker-compose up -d
+          docker compose up -d
           sleep 30s
 
       - name: Run the tests
