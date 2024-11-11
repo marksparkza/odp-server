@@ -4,11 +4,13 @@ import argon2
 from argon2.exceptions import VerifyMismatchError
 from sqlalchemy import select
 
+from odp.config import config
 from odp.const import ODPSystemRole, SAEON_EMAIL_DOMAINS
 from odp.const.db import IdentityCommand
 from odp.db import Session
 from odp.db.models import Client, IdentityAudit, User, UserRole
 from odp.lib import exceptions as x
+from sadco.const import SADCORole
 
 ph = argon2.PasswordHasher()
 
@@ -76,6 +78,8 @@ def validate_user_login(
         if not user.verified:
             raise x.ODPEmailNotVerified
 
+        assign_sadco_role(client_id, user.id)
+
         _create_audit_record(client_id, IdentityCommand.login, True, user_id=user.id)
         return user.id
 
@@ -117,6 +121,8 @@ def validate_auto_login(
 
         if not user.verified:
             raise x.ODPEmailNotVerified
+
+        assign_sadco_role(client_id, user.id)
 
         _create_audit_record(client_id, IdentityCommand.login, True, user_id=user_id)
 
@@ -275,6 +281,8 @@ def create_user_account(
         )
         user.save()
 
+        assign_sadco_role(client_id, user.id)
+
         assign_default_role(user.id)
 
         _create_audit_record(client_id, IdentityCommand.signup, True, email=email)
@@ -297,6 +305,18 @@ def assign_default_role(user_id):
 
     if not Session.get(UserRole, (user_id, default_role)):
         user_role = UserRole(user_id=user_id, role_id=default_role)
+        user_role.save()
+
+
+def assign_sadco_role(client_id, user_id):
+    """
+    Assign the SADCO role if the user has come from the SADCO client and does not have the role already.
+    """
+    if client_id != config.ODP.IDENTITY.SADCO_CLIENT_ID:
+        return
+
+    if not Session.get(UserRole, (user_id, SADCORole.SADCO_USER)):
+        user_role = UserRole(user_id=user_id, role_id=SADCORole.SADCO_USER)
         user_role.save()
 
 
@@ -393,6 +413,8 @@ def validate_google_login(
 
         if not user.active:
             raise x.ODPAccountDisabled
+
+        assign_sadco_role(client_id, user.id)
 
         _create_audit_record(client_id, IdentityCommand.login, True, user_id=user.id)
         return user.id
