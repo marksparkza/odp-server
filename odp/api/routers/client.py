@@ -5,6 +5,7 @@ from starlette.status import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CO
 from odp.api.lib.auth import Authorize, Authorized, hydra_admin_api, select_scopes
 from odp.api.lib.paging import Page, Paginator
 from odp.api.models import ClientModel, ClientModelIn
+from odp.api.models.client import OrphanedClientModel
 from odp.const import ODPScope
 from odp.db import Session
 from odp.db.models import Client, Collection
@@ -12,22 +13,31 @@ from odp.db.models import Client, Collection
 router = APIRouter()
 
 
-def output_client_model(client: Client) -> ClientModel:
-    hydra_client = hydra_admin_api.get_client(client.id)
-    return ClientModel(
+def output_client_model(client: Client) -> ClientModel | OrphanedClientModel:
+    if hydra_client := hydra_admin_api.get_client(client.id):
+        return ClientModel(
+            id=client.id,
+            name=hydra_client.name,
+            scope_ids=[scope.id for scope in client.scopes],
+            collection_specific=client.collection_specific,
+            collection_keys={collection.key: collection.id
+                             for collection in client.collections} if client.collection_specific else {},
+            grant_types=hydra_client.grant_types,
+            response_types=hydra_client.response_types,
+            redirect_uris=hydra_client.redirect_uris,
+            post_logout_redirect_uris=hydra_client.post_logout_redirect_uris,
+            token_endpoint_auth_method=hydra_client.token_endpoint_auth_method,
+            allowed_cors_origins=hydra_client.allowed_cors_origins,
+            client_credentials_grant_access_token_lifespan=hydra_client.client_credentials_grant_access_token_lifespan,
+        )
+
+    return OrphanedClientModel(
         id=client.id,
-        name=hydra_client.name,
+        name='[Hydra: client not found]',
         scope_ids=[scope.id for scope in client.scopes],
         collection_specific=client.collection_specific,
         collection_keys={collection.key: collection.id
                          for collection in client.collections} if client.collection_specific else {},
-        grant_types=hydra_client.grant_types,
-        response_types=hydra_client.response_types,
-        redirect_uris=hydra_client.redirect_uris,
-        post_logout_redirect_uris=hydra_client.post_logout_redirect_uris,
-        token_endpoint_auth_method=hydra_client.token_endpoint_auth_method,
-        allowed_cors_origins=hydra_client.allowed_cors_origins,
-        client_credentials_grant_access_token_lifespan=hydra_client.client_credentials_grant_access_token_lifespan,
     )
 
 
@@ -49,7 +59,7 @@ def create_or_update_hydra_client(client_in: ClientModelIn) -> None:
 
 @router.get(
     '/',
-    response_model=Page[ClientModel],
+    response_model=Page[ClientModel | OrphanedClientModel],
     dependencies=[Depends(Authorize(ODPScope.CLIENT_READ))],
 )
 async def list_clients(
@@ -63,7 +73,7 @@ async def list_clients(
 
 @router.get(
     '/{client_id}',
-    response_model=ClientModel,
+    response_model=ClientModel | OrphanedClientModel,
     dependencies=[Depends(Authorize(ODPScope.CLIENT_READ))],
 )
 async def get_client(
