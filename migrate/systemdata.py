@@ -27,7 +27,9 @@ from odp.db import Base, Session, engine
 from odp.db.models import Catalog, Client, Collection, Role, Schema, Scope, Tag, Vocabulary, VocabularyTerm
 from odp.lib.hydra import HydraAdminAPI
 from odp.lib.schema import schema_md5
+from nccrd.const import NCCRDScope
 from sadco.const import SADCOScope
+from somisana.const import SOMISANAScope
 
 datadir = pathlib.Path(__file__).parent / 'systemdata'
 logger = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ def initialize():
     with Session.begin():
         init_system_scopes()
         init_standard_scopes()
-        init_sadco_scopes()
+        init_client_scopes()
         init_system_roles()
         init_schemas()
         init_vocabularies()
@@ -105,19 +107,26 @@ def init_standard_scopes():
     )
 
 
-def init_sadco_scopes():
-    """Create or update the set of available SADCO API scopes."""
-    for scope_id in (scope_ids := [s.value for s in SADCOScope]):
-        if not Session.get(Scope, (scope_id, ScopeType.client)):
-            scope = Scope(id=scope_id, type=ScopeType.client)
-            scope.save()
+def init_client_scopes():
+    """Create or update the set of available API scopes for
+    SADCO, SOMISANA and NCCRD."""
+    scope_classes = {
+        'nccrd.%': NCCRDScope,
+        'sadco.%': SADCOScope,
+        'somisana.%': SOMISANAScope,
+    }
+    for scope_pattern, scope_enum in scope_classes.items():
+        for scope_id in (scope_ids := [s.value for s in scope_enum]):
+            if not Session.get(Scope, (scope_id, ScopeType.client)):
+                scope = Scope(id=scope_id, type=ScopeType.client)
+                scope.save()
 
-    Session.execute(
-        delete(Scope).
-        where(Scope.type == ScopeType.client).
-        where(Scope.id.like('sadco.%')).
-        where(Scope.id.not_in(scope_ids))
-    )
+        Session.execute(
+            delete(Scope).
+            where(Scope.type == ScopeType.client).
+            where(Scope.id.like(scope_pattern)).
+            where(Scope.id.not_in(scope_ids))
+        )
 
 
 def init_system_roles():
